@@ -1,4 +1,4 @@
-# BD37033 Sound Controller for Jerking UxyyyN[D][2] car radios
+# BD37033 Sound Controller for Jerking UxyyyN[D?][2] car radios
 
 Currently a work in progress, but tested AND WORKING.<br>
 <br>
@@ -7,4 +7,6 @@ This will also require the permissions to be changed on /dev/i2c-4 so that our p
 <br>
 Right now implements a service launched by a launcher icon. The service provides buttons to vol+, vol-, enable/disable mixing, and swich between phone and AMFM radio mode (click the notification itself).<br>
 <br>
-DOES NOT respond to volume buttons on SWI. That functionality will be added when I take over control of the MCU.
+DOES NOT respond to volume buttons on SWI. That functionality will be added when I take over control of the MCU.<br>
+<br>
+Not sure what it will do with a "D" radio. Probably work fine, but if they are rerouting through another audio chip, then who knows. Note that whether it is a "D" or not, it still have the BD37033, since it is built in to the SoM (on the bottom side).
