@@ -191,6 +191,7 @@ public class SoundService extends Service {
     public void onCreate() {
         super.onCreate();
         filedes = JniI2c.open("/dev/i2c-4");
+        Log.d(LOG_TAG, "Filedes: "+Integer.toString(filedes));
         if (filedes <= 0){
             stopForeground(true);
             stopSelf();
@@ -248,14 +249,14 @@ public class SoundService extends Service {
         notification = new Notification.Builder(this)
                 .setContentTitle("BD37033 Controller")
                 .setTicker("BD37033 Controller")
-                .setContentText("Volume: "+Integer.toString(mixer_gain)+", Mix: "+Boolean.toString((!phone)&&mix)+", Phone: "+Boolean.toString(phone))
+                .setContentText("Volume: "+Integer.toString(master_gain)+", Mix: "+Boolean.toString((!phone)&&mix)+", Phone: "+Boolean.toString(phone))
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setLargeIcon(Bitmap.createScaledBitmap(icon, 128, 128, false))
                 .setContentIntent(phonePIntent)
                 .setOngoing(true)
                 .addAction(android.R.drawable.ic_media_previous, "Vol-", voldownPIntent)
-                .addAction(android.R.drawable.ic_media_play, "Vol+", volupPIntent)
-                .addAction(android.R.drawable.ic_media_next, "Mix", mixPIntent)
+                .addAction(android.R.drawable.ic_media_next, "Vol+", volupPIntent)
+                .addAction(android.R.drawable.ic_media_play, "Mix", mixPIntent)
                 .build();
     }
 
