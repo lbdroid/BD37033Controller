@@ -74,6 +74,11 @@ public class SoundService extends Service {
         if (filedes > 0 && master_gain < maxvoloff){
             if (JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_gain+1]) == 2){
                 master_gain++;
+                if (mix){
+                    mixer_gain = master_gain+10;
+                    if (mixer_gain > maxvoloff) mixer_gain = maxvoloff;
+                    JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[mixer_gain+1]);
+                }
                 return true;
             }
             return false;
@@ -86,6 +91,11 @@ public class SoundService extends Service {
         if (filedes > 0 && master_gain > 0){
             if (JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_gain-1]) == 2){
                 master_gain--;
+                if (mix){
+                    mixer_gain = master_gain+10;
+                    if (mixer_gain > maxvoloff) mixer_gain = maxvoloff;
+                    JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[mixer_gain+1]);
+                }
                 return true;
             }
             return false;
@@ -151,15 +161,12 @@ public class SoundService extends Service {
         // NOTE: Master volume controls AMFM radio on input A, mixer controls Android on input B
         if (filedes > 0){
             if (on) {
-                mixer_gain = 16;
-                if (master_gain >= 4) master_gain -= 4;
-                else master_gain = 0;
+                mixer_gain = master_gain+10;
+                if (mixer_gain > maxvoloff) mixer_gain = maxvoloff;
                 JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_gain]); // master volume -38dB
                 JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[mixer_gain]); // mixer volume -18dB
             } else {
                 mixer_gain = 0;
-                if (master_gain < (maxvoloff-4)) master_gain += 4;
-                else master_gain = maxvoloff;
                 JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_gain]); // master volume -29dB
                 JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[mixer_gain]); // mixer MUTE
             }
