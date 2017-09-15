@@ -8,6 +8,12 @@ i.e., chmod 666 /dev/i2c-4<br>
 Yeah, I know that 666 is not ideal.<br>
 I'm going to look into what is the best way to automatically make the permission change, since it requires root access (adb shell, su)<br>
 <br>
+THIS IS HOW:<br>
+Create a file at /system/bin/install-recovery.sh with permissions 755<br>
+Contents:<br>
+#!/system/bin/sh<br>
+chmod 666 /dev/i2c-4<br>
+<br>
 Right now implements a service launched by a launcher icon. The service provides buttons to vol+, vol-, enable/disable mixing, and swich between phone and AMFM radio mode (click the notification itself).<br>
 <br>
 DOES NOT respond to volume buttons on SWI. That functionality will be added when I take over control of the MCU.<br>
