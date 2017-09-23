@@ -1,6 +1,7 @@
 package tk.rabidbeaver.bd37033controller;
 
 import android.app.Activity;
+
 import android.content.Intent;
 import android.os.Bundle;
 public class MainActivity extends Activity {
@@ -12,6 +13,7 @@ public class MainActivity extends Activity {
         service.setAction("start");
         startService(service);
         finish();
+
     }
 
 }

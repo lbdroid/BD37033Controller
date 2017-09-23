@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           package="tk.rabidbeaver.bd37033controller">
 
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -9,13 +11,27 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-        <activity android:name=".MainActivity"
-                  android:theme="@android:style/Theme.Translucent.NoTitleBar">
+        <activity android:name=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <receiver android:name=".LoadReceiver" >
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+        </receiver>
+        <receiver android:name=".CommandReceiver" >
+            <intent-filter>
+                <action android:name="tk.rabidbeaver.bd37033controller.VOL_UP"/>
+                <action android:name="tk.rabidbeaver.bd37033controller.VOL_DOWN" />
+                <action android:name="tk.rabidbeaver.bd37033controller.MUTE" />
+                <action android:name="tk.rabidbeaver.bd37033controller.PHONE_ON" />
+                <action android:name="tk.rabidbeaver.bd37033controller.PHONE_OFF" />
+            </intent-filter>
+        </receiver>
         <service android:name=".SoundService" />
     </application>
 
