@@ -5,7 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 
 /*
- * TODO: Need to make update to sofiaserver and to bttestapp
+ * TODO: Need to make update to sofiaserver
  *
  * sofiaserver: I think in module/main/HandlerMain.smali, functions;
  *   mcuKeyVolUp()
@@ -13,8 +13,6 @@ import android.content.Intent;
  *   mcuKeyVolMute()
  *   ** probably easiest is to redirect it to the same script as used for key remapping
  *   and then to send the broadcast from there.
- *
- * bttestapp: Send the broadcast when the phone audio [dis]connects.
  */
 public class CommandReceiver extends BroadcastReceiver {
     @Override

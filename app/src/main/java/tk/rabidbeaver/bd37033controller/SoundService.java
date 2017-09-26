@@ -7,8 +7,6 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -188,13 +186,15 @@ public class SoundService extends Service {
 
     private void mix(boolean on){
         // NOTE: Master volume controls AMFM radio on input A, mixer controls Android on input B
-        if (filedes > 0){
+        if (filedes > 0 && !phone){
             if (on) {
                 JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -38dB
                 JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer volume -18dB
+                JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup);
             } else {
                 JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -29dB
                 JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[0]); // mixer MUTE
+                JniI2c.writeRk(filedes, 0x40, 0x03, 0x0e); // mixer both channels OFF
             }
             stateStore.edit().putBoolean("mix", mix).apply();
         }
@@ -239,6 +239,7 @@ public class SoundService extends Service {
                 JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
                 JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
                 JniI2c.writeRk(filedes, 0x40, 0x02, 0x00); // sub output MUTE
+                JniI2c.writeRk(filedes, 0x40, 0x03, 0x0e); // mixer both channels OFF
                 JniI2c.writeRk(filedes, 0x40, 0x05, 0x0b); // input select E2_single
                 JniI2c.writeRk(filedes, 0x40, 0x06, 0x05); // input gain 5dB
                 JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[phone_master_vol]); // master volume -9dB
@@ -247,6 +248,7 @@ public class SoundService extends Service {
                 JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
                 JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
                 JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
+                JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup); // mixer both channels ON
                 JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select); // input select A_single
                 JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
                 JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
@@ -277,7 +279,7 @@ public class SoundService extends Service {
         if (loudf0 < 0 || loudf0 > 2 || loudgain < 0 || loudgain > 15 || hicut < 0 || hicut > 3) return;
         rloud_config = loudgain | (hicut << 5);
         rmixer_setup = loudf0 << 3;
-        JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup);
+        if (mix && !phone) JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup);
         JniI2c.writeRk(filedes, 0x40, 0x75, rloud_config);
     }
     private void saveLoudness(){
@@ -424,8 +426,13 @@ public class SoundService extends Service {
      * DO NOT STORE!
      */
     private void mixMute(boolean on){
-        if (on) JniI2c.writeRk(filedes, 0x40, 0x30, 0xff);
-        else JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset);
+        if (on){
+            JniI2c.writeRk(filedes, 0x40, 0x30, 0xff);
+            JniI2c.writeRk(filedes, 0x40, 0x03, 0x0e); // mixer both channels OFF
+        } else {
+            JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset);
+            JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup); // mixer both channels ON
+        }
 
     }
 
@@ -521,19 +528,16 @@ public class SoundService extends Service {
         phoneIntent.setAction("phone");
         PendingIntent phonePIntent = PendingIntent.getService(this, 0, phoneIntent, 0);
 
-        Bitmap icon = BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher);
-
         notification = new Notification.Builder(this)
                 .setContentTitle("BD37033 Controller")
                 .setTicker("BD37033 Controller")
                 .setContentText("Volume: "+Integer.toString(master_vol)+", Mix: "+Boolean.toString((!phone)&&mix)+", Phone: "+Boolean.toString(phone))
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setLargeIcon(Bitmap.createScaledBitmap(icon, 128, 128, false))
+                .setSmallIcon(R.drawable.ic_volume_mute_white_48dp)
                 .setContentIntent(phonePIntent)
                 .setOngoing(true)
-                .addAction(android.R.drawable.ic_media_previous, "Vol-", voldownPIntent)
-                .addAction(android.R.drawable.ic_media_next, "Vol+", volupPIntent)
-                .addAction(android.R.drawable.ic_media_play, "Mix", mixPIntent)
+                .addAction(R.drawable.ic_volume_down_white_48dp, "Vol-", voldownPIntent)
+                .addAction(R.drawable.ic_volume_up_white_48dp, "Vol+", volupPIntent)
+                .addAction(R.drawable.ic_device_hub_white_48dp, "Mix", mixPIntent)
                 .build();
     }
 
