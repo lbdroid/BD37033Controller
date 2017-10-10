@@ -3,7 +3,7 @@ package com.syu.jni;
 @SuppressWarnings("JniMissingFunction")
 public class JniI2c {
     static {
-        System.loadLibrary("jni_i2c_moved");
+        System.loadLibrary("jni_i2c");
     }
 
     public static native int open(String path);
