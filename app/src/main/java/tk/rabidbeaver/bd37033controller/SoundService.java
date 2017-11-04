@@ -7,16 +7,22 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.LocalSocket;
+import android.net.LocalSocketAddress;
 import android.os.IBinder;
 import android.util.Log;
 
-import com.syu.jni.JniI2c;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 
 public class SoundService extends Service {
     private static final String LOG_TAG = "SoundService";
     private static Notification notification;
 
-    private static int filedes = -1;
+    LocalSocket mSocket;
+    DataInputStream is;
+    DataOutputStream os;
 
     // Following block is loaded from shared prefs:
     private static int rinit_setup;
@@ -90,19 +96,29 @@ public class SoundService extends Service {
             0x7e, //35 +2dB
             0x7d  //36 +3dB
     };
+    
+    int writeBD(int b1, int b2){
+        byte data[] = {(byte)0xaa, 0x55, 0x02, (byte)b1, (byte)b2, (byte)(0x02^b1^b2)};
+        try {
+            os.write(data, 0, 6);
+        } catch (IOException e){
+            e.printStackTrace();
+        }
+        return 2;
+    }
 
     private boolean volUp(){
-        if (phone && filedes > 0 && phone_master_vol < maxvoloff) {
-            if (JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[phone_master_vol+1]) == 2){
+        if (phone && mSocket.isConnected() && phone_master_vol < maxvoloff) {
+            if (writeBD(0x20, volsteps[phone_master_vol+1]) == 2){
                 phone_master_vol++;
                 stateStore.edit().putInt("phone_master_vol", phone_master_vol).apply();
                 return true;
             }
             return false;
-        } else if (!phone && filedes > 0 && master_vol < maxvoloff){
-            if (JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol+1]) == 2){
+        } else if (!phone && mSocket.isConnected() && master_vol < maxvoloff){
+            if (writeBD(0x20, volsteps[master_vol+1]) == 2){
                 master_vol++;
-                if (mix) JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset);
+                if (mix) writeBD(0x30, volsteps[master_vol]+mixer_offset);
                 stateStore.edit().putInt("master_vol", master_vol).apply();
                 return true;
             }
@@ -112,17 +128,17 @@ public class SoundService extends Service {
     }
 
     private boolean volDown(){
-        if (phone && filedes > 0 && phone_master_vol > 0) {
-            if (JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[phone_master_vol-1]) == 2){
+        if (phone && mSocket.isConnected() && phone_master_vol > 0) {
+            if (writeBD(0x20, volsteps[phone_master_vol-1]) == 2){
                 phone_master_vol--;
                 stateStore.edit().putInt("phone_master_vol", phone_master_vol).apply();
                 return true;
             }
             return false;
-        } else if (!phone && filedes > 0 && master_vol > 0){
-            if (JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol-1]) == 2){
+        } else if (!phone && mSocket.isConnected() && master_vol > 0){
+            if (writeBD(0x20, volsteps[master_vol-1]) == 2){
                 master_vol--;
-                if (mix) JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset);
+                if (mix) writeBD(0x30, volsteps[master_vol]+mixer_offset);
                 stateStore.edit().putInt("master_vol", master_vol).apply();
                 return true;
             }
@@ -132,27 +148,27 @@ public class SoundService extends Service {
     }
 
     private void resetupBD37033(){
-        if (filedes > 0) {
-            JniI2c.writeRk(filedes, 0x40, 0xfe, 0x81); // system reset
-            JniI2c.writeRk(filedes, 0x40, 0x01, rinit_setup); // initial setup *1
-            JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // subwoofer setup *2
-            JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup); // mixer setup *3
-            JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select); // input selector A full diff type negative input
-            JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain MUTE OFF, 8dB
-            JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master gain -15dB
-            JniI2c.writeRk(filedes, 0x40, 0x28, rfader_f1); // F1 gain 0dB
-            JniI2c.writeRk(filedes, 0x40, 0x29, rfader_f2); // F2 gain 0dB
-            JniI2c.writeRk(filedes, 0x40, 0x2a, rfader_r1); // R1 gain 0dB
-            JniI2c.writeRk(filedes, 0x40, 0x2b, rfader_r2); // R2 gain 0dB
-            JniI2c.writeRk(filedes, 0x40, 0x2c, rfader_sub); // subwoofer gain -12dB
-            JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset);
-            JniI2c.writeRk(filedes, 0x40, 0x41, rbass_config); // bass f0 80Hz, Q 0.5
-            JniI2c.writeRk(filedes, 0x40, 0x44, rmid_config); // mid f0 1kHz, Q 1.0
-            JniI2c.writeRk(filedes, 0x40, 0x47, rtreb_config); // treb f0 7.5 kHz, Q 1.25
-            JniI2c.writeRk(filedes, 0x40, 0x51, rbass_gain); // bass gain BOOST, 4dB
-            JniI2c.writeRk(filedes, 0x40, 0x54, rmid_gain); // mid gain BOOST, 0dB
-            JniI2c.writeRk(filedes, 0x40, 0x57, rtreb_gain); // treb gain BOOST, 5dB
-            JniI2c.writeRk(filedes, 0x40, 0x75, rloud_config); // loudness gain "HICUT4", 0dB
+        if (mSocket.isConnected()) {
+            writeBD(0xfe, 0x81); // system reset
+            writeBD(0x01, rinit_setup); // initial setup *1
+            writeBD(0x02, rlpf_setup); // subwoofer setup *2
+            writeBD(0x03, rmixer_setup); // mixer setup *3
+            writeBD(0x05, rinput_select); // input selector A full diff type negative input
+            writeBD(0x06, rinput_gain); // input gain MUTE OFF, 8dB
+            writeBD(0x20, volsteps[master_vol]); // master gain -15dB
+            writeBD(0x28, rfader_f1); // F1 gain 0dB
+            writeBD(0x29, rfader_f2); // F2 gain 0dB
+            writeBD(0x2a, rfader_r1); // R1 gain 0dB
+            writeBD(0x2b, rfader_r2); // R2 gain 0dB
+            writeBD(0x2c, rfader_sub); // subwoofer gain -12dB
+            writeBD(0x30, volsteps[master_vol]+mixer_offset);
+            writeBD(0x41, rbass_config); // bass f0 80Hz, Q 0.5
+            writeBD(0x44, rmid_config); // mid f0 1kHz, Q 1.0
+            writeBD(0x47, rtreb_config); // treb f0 7.5 kHz, Q 1.25
+            writeBD(0x51, rbass_gain); // bass gain BOOST, 4dB
+            writeBD(0x54, rmid_gain); // mid gain BOOST, 0dB
+            writeBD(0x57, rtreb_gain); // treb gain BOOST, 5dB
+            writeBD(0x75, rloud_config); // loudness gain "HICUT4", 0dB
 
             /* Notes:
              * 1: "11100011"
@@ -186,15 +202,15 @@ public class SoundService extends Service {
 
     private void mix(boolean on){
         // NOTE: Master volume controls AMFM radio on input A, mixer controls Android on input B
-        if (filedes > 0 && !phone){
+        if (mSocket.isConnected() && !phone){
             if (on) {
-                JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -38dB
-                JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer volume -18dB
-                JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup);
+                writeBD(0x20, volsteps[master_vol]); // master volume -38dB
+                writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer volume -18dB
+                writeBD(0x03, rmixer_setup);
             } else {
-                JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -29dB
-                JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[0]); // mixer MUTE
-                JniI2c.writeRk(filedes, 0x40, 0x03, 0x0e); // mixer both channels OFF
+                writeBD(0x20, volsteps[master_vol]); // master volume -29dB
+                writeBD(0x30, volsteps[0]); // mixer MUTE
+                writeBD(0x03, 0x0e); // mixer both channels OFF
             }
             stateStore.edit().putBoolean("mix", mix).apply();
         }
@@ -204,22 +220,22 @@ public class SoundService extends Service {
         if (gain < 0 || gain > 15 || q < 0 || q > 3 || f0 < 0 || f0 > 3) return;
         rbass_config = q | f0 << 4;
         rbass_gain = gain | (cut?0x80:0x00);
-        JniI2c.writeRk(filedes, 0x40, 0x41, rbass_config);
-        JniI2c.writeRk(filedes, 0x40, 0x51, rbass_gain);
+        writeBD(0x41, rbass_config);
+        writeBD(0x51, rbass_gain);
     }
     private void setMid(int q, int f0, int gain, boolean cut){
         if (gain < 0 || gain > 15 || q < 0 || q > 3 || f0 < 0 || f0 > 3) return;
         rmid_config = q | f0 << 4;
         rmid_gain = gain | (cut?0x80:0x00);
-        JniI2c.writeRk(filedes, 0x40, 0x44, rmid_config);
-        JniI2c.writeRk(filedes, 0x40, 0x54, rmid_gain);
+        writeBD(0x44, rmid_config);
+        writeBD(0x54, rmid_gain);
     }
     private void setTreb(int q, int f0, int gain, boolean cut){
         if (gain < 0 || gain > 15 || q < 0 || q > 1 || f0 < 0 || f0 > 3) return;
         rtreb_config = q | f0 << 4;
         rtreb_gain = gain | (cut?0x80:0x00);
-        JniI2c.writeRk(filedes, 0x40, 0x47, rtreb_config);
-        JniI2c.writeRk(filedes, 0x40, 0x57, rtreb_gain);
+        writeBD(0x47, rtreb_config);
+        writeBD(0x57, rtreb_gain);
     }
     private void storeEq(){
         SharedPreferences.Editor editor = stateStore.edit();
@@ -234,25 +250,25 @@ public class SoundService extends Service {
 
     private void setPhone(boolean on){
         // NOTE: BT phone seems to be on E2_single.
-        if (filedes > 0){
+        if (mSocket.isConnected()){
             if (on){
-                JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-                JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-                JniI2c.writeRk(filedes, 0x40, 0x02, 0x00); // sub output MUTE
-                JniI2c.writeRk(filedes, 0x40, 0x03, 0x0e); // mixer both channels OFF
-                JniI2c.writeRk(filedes, 0x40, 0x05, 0x0b); // input select E2_single
-                JniI2c.writeRk(filedes, 0x40, 0x06, 0x05); // input gain 5dB
-                JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[phone_master_vol]); // master volume -9dB
-                JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
+                writeBD(0x20, 0xff); // master MUTE
+                writeBD(0x30, 0xff); // mixer MUTE
+                writeBD(0x02, 0x00); // sub output MUTE
+                writeBD(0x03, 0x0e); // mixer both channels OFF
+                writeBD(0x05, 0x0b); // input select E2_single
+                writeBD(0x06, 0x05); // input gain 5dB
+                writeBD(0x20, volsteps[phone_master_vol]); // master volume -9dB
+                writeBD(0x30, 0xff); // mixer MUTE
             } else {
-                JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-                JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-                JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-                JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup); // mixer both channels ON
-                JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select); // input select A_single
-                JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-                JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-                JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
+                writeBD(0x20, 0xff); // master MUTE
+                writeBD(0x30, 0xff); // mixer MUTE
+                writeBD(0x02, rlpf_setup); // sub output resume
+                writeBD(0x03, rmixer_setup); // mixer both channels ON
+                writeBD(0x05, rinput_select); // input select A_single
+                writeBD(0x06, rinput_gain); // input gain 8dB
+                writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+                writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
             }
         }
     }
@@ -261,9 +277,9 @@ public class SoundService extends Service {
      * freqCut: 0=OFF, 1=55Hz, 2=85Hz, 3=120Hz, 4=160Hz, 5=full range
      */
     private void setLPF(boolean phase180, boolean bypassAudioProc, int freqCut){
-        if (filedes <= 0 || freqCut < 0 || freqCut > 5) return;
+        if (!mSocket.isConnected() || freqCut < 0 || freqCut > 5) return;
         rlpf_setup = freqCut | (phase180?0x80:0x00) | (bypassAudioProc?0x08:0x00);
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup);
+        writeBD(0x02, rlpf_setup);
     }
     private void saveLPF(){
         stateStore.edit().putInt("rlpf_setup", rlpf_setup).apply();
@@ -279,8 +295,8 @@ public class SoundService extends Service {
         if (loudf0 < 0 || loudf0 > 2 || loudgain < 0 || loudgain > 15 || hicut < 0 || hicut > 3) return;
         rloud_config = loudgain | (hicut << 5);
         rmixer_setup = loudf0 << 3;
-        if (mix && !phone) JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup);
-        JniI2c.writeRk(filedes, 0x40, 0x75, rloud_config);
+        if (mix && !phone) writeBD(0x03, rmixer_setup);
+        writeBD(0x75, rloud_config);
     }
     private void saveLoudness(){
         stateStore.edit().putInt("rmixer_setup", rmixer_setup).apply();
@@ -289,81 +305,81 @@ public class SoundService extends Service {
 
     private void setInputA(){ // AMFM radio
         rinput_select = 0x00;
-        JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-        JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-        JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
+        writeBD(0x20, 0xff); // master MUTE
+        writeBD(0x30, 0xff); // mixer MUTE
+        writeBD(0x02, rlpf_setup); // sub output resume
+        writeBD(0x05, rinput_select);
+        writeBD(0x06, rinput_gain); // input gain 8dB
+        writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+        writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
         stateStore.edit().putInt("rinput_select", rinput_select).apply();
     }
     private void setInputB(){ // Android
         rinput_select = 0x01;
-        JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-        JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
+        writeBD(0x20, 0xff); // master MUTE
+        writeBD(0x30, 0xff); // mixer MUTE
+        writeBD(0x02, rlpf_setup); // sub output resume
+        writeBD(0x05, rinput_select);
+        writeBD(0x06, rinput_gain); // input gain 8dB
+        writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+        writeBD(0x30, 0xff); // mixer MUTE
         stateStore.edit().putInt("rinput_select", rinput_select).apply();
     }
     private void setInputC(){
         rinput_select = 0x02;
-        JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-        JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-        JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
+        writeBD(0x20, 0xff); // master MUTE
+        writeBD(0x30, 0xff); // mixer MUTE
+        writeBD(0x02, rlpf_setup); // sub output resume
+        writeBD(0x05, rinput_select);
+        writeBD(0x06, rinput_gain); // input gain 8dB
+        writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+        writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
+        writeBD(0x05, rinput_select);
         stateStore.edit().putInt("rinput_select", rinput_select).apply();
     }
     private void setInputD(){
         rinput_select = 0x03;
-        JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-        JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-        JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
+        writeBD(0x20, 0xff); // master MUTE
+        writeBD(0x30, 0xff); // mixer MUTE
+        writeBD(0x02, rlpf_setup); // sub output resume
+        writeBD(0x05, rinput_select);
+        writeBD(0x06, rinput_gain); // input gain 8dB
+        writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+        writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
         stateStore.edit().putInt("rinput_select", rinput_select).apply();
     }
     private void setInputDDiff(){
         rinput_select = 0x06;
-        JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-        JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-        JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
+        writeBD(0x20, 0xff); // master MUTE
+        writeBD(0x30, 0xff); // mixer MUTE
+        writeBD(0x02, rlpf_setup); // sub output resume
+        writeBD(0x05, rinput_select);
+        writeBD(0x06, rinput_gain); // input gain 8dB
+        writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+        writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
         stateStore.edit().putInt("rinput_select", rinput_select).apply();
     }
     private void setInputE2(){ // probably never used
         rinput_select = 0x0b;
-        JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-        JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-        JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
+        writeBD(0x20, 0xff); // master MUTE
+        writeBD(0x30, 0xff); // mixer MUTE
+        writeBD(0x02, rlpf_setup); // sub output resume
+        writeBD(0x05, rinput_select);
+        writeBD(0x06, rinput_gain); // input gain 8dB
+        writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+        writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
         stateStore.edit().putInt("rinput_select", rinput_select).apply();
     }
     private void setInputEFull(boolean biasType){ // maybe bluetooth stereo?
         rinput_select = 0x08 | (biasType?0x80:0x00);
-        JniI2c.writeRk(filedes, 0x40, 0x20, 0xff); // master MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x30, 0xff); // mixer MUTE
-        JniI2c.writeRk(filedes, 0x40, 0x02, rlpf_setup); // sub output resume
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain); // input gain 8dB
-        JniI2c.writeRk(filedes, 0x40, 0x20, volsteps[master_vol]); // master volume -20dB
-        JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
-        JniI2c.writeRk(filedes, 0x40, 0x05, rinput_select);
+        writeBD(0x20, 0xff); // master MUTE
+        writeBD(0x30, 0xff); // mixer MUTE
+        writeBD(0x02, rlpf_setup); // sub output resume
+        writeBD(0x05, rinput_select);
+        writeBD(0x06, rinput_gain); // input gain 8dB
+        writeBD(0x20, volsteps[master_vol]); // master volume -20dB
+        writeBD(0x30, volsteps[master_vol]+mixer_offset); // mixer back were it was before
+        writeBD(0x05, rinput_select);
         stateStore.edit().putInt("rinput_select", rinput_select).apply();
     }
 
@@ -374,12 +390,12 @@ public class SoundService extends Service {
     private void mute(boolean on){
         muted = on;
         rinput_gain = on?(rinput_gain|0x80):(rinput_gain&0x7f);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain);
+        writeBD(0x06, rinput_gain);
     }
     private void mute(){
         muted = !muted;
         rinput_gain = muted?(rinput_gain|0x80):(rinput_gain&0x7f);
-        JniI2c.writeRk(filedes, 0x40, 0x06, rinput_gain);
+        writeBD(0x06, rinput_gain);
     }
 
     /*
@@ -394,23 +410,23 @@ public class SoundService extends Service {
                 || (sub < 0x71 && sub != -1) || (sub > 0xcf && sub != 0xff)) return;
         if (f1 > 0){
             rfader_f1 = f1;
-            JniI2c.writeRk(filedes, 0x40, 0x28, rfader_f1);
+            writeBD(0x28, rfader_f1);
         }
         if (f2 > 0){
             rfader_f2 = f2;
-            JniI2c.writeRk(filedes, 0x40, 0x29, rfader_f2);
+            writeBD(0x29, rfader_f2);
         }
         if (r1 > 0){
             rfader_r1 = r1;
-            JniI2c.writeRk(filedes, 0x40, 0x2a, rfader_r1);
+            writeBD(0x2a, rfader_r1);
         }
         if (r2 > 0){
             rfader_r2 = r2;
-            JniI2c.writeRk(filedes, 0x40, 0x2b, rfader_r2);
+            writeBD(0x2b, rfader_r2);
         }
         if (sub > 0) {
             rfader_sub = sub;
-            JniI2c.writeRk(filedes, 0x40, 0x2c, rfader_sub);
+            writeBD(0x2c, rfader_sub);
         }
     }
     private void storeFaders(){
@@ -427,11 +443,11 @@ public class SoundService extends Service {
      */
     private void mixMute(boolean on){
         if (on){
-            JniI2c.writeRk(filedes, 0x40, 0x30, 0xff);
-            JniI2c.writeRk(filedes, 0x40, 0x03, 0x0e); // mixer both channels OFF
+            writeBD(0x30, 0xff);
+            writeBD(0x03, 0x0e); // mixer both channels OFF
         } else {
-            JniI2c.writeRk(filedes, 0x40, 0x30, volsteps[master_vol]+mixer_offset);
-            JniI2c.writeRk(filedes, 0x40, 0x03, rmixer_setup); // mixer both channels ON
+            writeBD(0x30, volsteps[master_vol]+mixer_offset);
+            writeBD(0x03, rmixer_setup); // mixer both channels ON
         }
 
     }
@@ -439,12 +455,18 @@ public class SoundService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        filedes = JniI2c.open("/dev/i2c-4");
-        Log.d(LOG_TAG, "Filedes: "+Integer.toString(filedes));
-        if (filedes <= 0){
+
+        mSocket = new LocalSocket();
+        try {
+            mSocket.connect(new LocalSocketAddress("/dev/car/audio", LocalSocketAddress.Namespace.FILESYSTEM));
+            is = new DataInputStream(mSocket.getInputStream());
+            os = new DataOutputStream(mSocket.getOutputStream());
+        } catch (Exception e){
+            e.printStackTrace();
             stopForeground(true);
             stopSelf();
         }
+
         stateStore = getApplicationContext().getSharedPreferences("stateStore", Context.MODE_PRIVATE);
 
         rinit_setup = stateStore.getInt("rinit_setup", 0xe3);
@@ -545,8 +567,15 @@ public class SoundService extends Service {
     public void onDestroy() {
         super.onDestroy();
         Log.i(LOG_TAG, "In onDestroy");
-        if (filedes > 0) JniI2c.close(filedes);
-        filedes = 0;
+        if (mSocket.isConnected()){
+            try {
+                is.close();
+                os.close();
+                mSocket.close();
+            } catch (IOException e){
+                e.printStackTrace();
+            }
+        }
     }
 
     @Override
