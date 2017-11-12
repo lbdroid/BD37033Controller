@@ -520,11 +520,6 @@ public class SoundService extends Service {
             mix(mix);
             showNotification();
             ((NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE)).notify(17425, notification);
-        } else if (intent.getAction().contains("phone")){
-            phone=!phone;
-            setPhone(phone);
-            showNotification();
-            ((NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE)).notify(17425, notification);
         } else {
             resetupBD37033();
             showNotification();
@@ -546,16 +541,11 @@ public class SoundService extends Service {
         mixIntent.setAction("mix");
         PendingIntent mixPIntent = PendingIntent.getService(this, 0, mixIntent, 0);
 
-        Intent phoneIntent = new Intent(this, SoundService.class);
-        phoneIntent.setAction("phone");
-        PendingIntent phonePIntent = PendingIntent.getService(this, 0, phoneIntent, 0);
-
         notification = new Notification.Builder(this)
                 .setContentTitle("BD37033 Controller")
                 .setTicker("BD37033 Controller")
                 .setContentText("Volume: "+Integer.toString(master_vol)+", Mix: "+Boolean.toString((!phone)&&mix)+", Phone: "+Boolean.toString(phone))
                 .setSmallIcon(R.drawable.ic_volume_mute_white_48dp)
-                .setContentIntent(phonePIntent)
                 .setOngoing(true)
                 .addAction(R.drawable.ic_volume_down_white_48dp, "Vol-", voldownPIntent)
                 .addAction(R.drawable.ic_volume_up_white_48dp, "Vol+", volupPIntent)
